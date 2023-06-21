@@ -11,7 +11,55 @@ import Hyperbee from "hyperbee";
 import goodbye from "graceful-goodbye";
 //@ts-ignore
 import b4a from "b4a";
+import { createHash } from "crypto";
 
+export class SQLParser {
+  query: string;
+  constructor(query: string) {
+    this.query = query;
+  }
+
+  parse() {
+    const queryWords = this.query.split(" ");
+    const queryType = queryWords[0].toLowerCase();
+    // Check the query type and call the appropriate function
+    switch (queryType) {
+      case "create":
+        this.create(queryWords);
+        break;
+      case "insert":
+        this.addRow(queryWords);
+        break;
+      // case "select":
+      //   getRows(query);
+      //   break;
+      // case "update":
+      //   updateRow(query);
+      //   break;
+      default:
+        console.log("Unsupported SQL query type.");
+    }
+  }
+
+  private create(queryWords: string[]) {
+    switch (queryWords[1]) {
+      case "table":
+        this.createTable(queryWords);
+        break;
+      case "database":
+        this.createDatabase(queryWords);
+        break;
+      default:
+        console.log("Unsupported SQL query type.");
+    }
+  }
+
+  private createTable(queryWords: string[]) {}
+
+  private createDatabase(queryWords: string[]) {}
+
+  private addRow(queryWords: string[]) {}
+}
 export class Schema {
   definition: SchemaDefinition;
   lastIndex = 0;
@@ -23,11 +71,29 @@ export class Schema {
 export type SchemaDefinition = { [key: string]: SchemaValueType };
 export type SchemaValueType = number | string | Array<any> | Object;
 
-const store = new Corestore("./writer-storage");
+const topic = "test-topic";
+const topicHex = createHash("sha256").update(topic).digest("hex");
+const topicBuffer = b4a.from(topicHex, "hex");
+
+const name = process.argv[2];
+const store = new Corestore(`./${name}`);
 
 const swarm = new Hyperswarm();
 goodbye(() => swarm.destroy());
-swarm.on("connection", (conn: any) => store.replicate(conn));
+swarm.join(topicBuffer);
+
+const conns: any[] = [];
+
+swarm.on("connection", (conn: any) => {
+  store.replicate(conn);
+  const name = b4a.toString(conn.remotePublicKey, "hex");
+  console.log("* got a connection from:", name, "*");
+  conns.push(conn);
+  for (const conn of conns) {
+    conn.write("line");
+  }
+  conn;
+});
 
 const core = store.get({ name: "my-bee-core" });
 const bee = new Hyperbee(core, {
@@ -35,13 +101,19 @@ const bee = new Hyperbee(core, {
   valueEncoding: "utf-8",
 });
 
+bee.feed.ready().then(function () {
+  console.log("Feed key: " + bee.feed.key.toString("hex"));
+  // swarm.join(bee.feed.discoveryKey);
+});
+
 await core.ready();
-const discovery = swarm.join(core.discoveryKey);
+const discovery = swarm.join(topicBuffer);
 
 // Only display the key once the Hyperbee has been announced to the DHT
-discovery
-  .flushed()
-  .then(() => console.log("bee key:", b4a.toString(core.key, "hex")));
+discovery.flushed().then(() => {
+  console.log("bee key:", b4a.toString(core.key, "hex"));
+  console.log("joined topic:", topic);
+});
 
 // // Only import the dictionary the first time this script is executed
 // // The first block will always be the Hyperbee header block
@@ -60,8 +132,8 @@ discovery
 // }
 
 // await createTable("teacher", new Schema({ name: "string", id: "number" }));
-await insertRowInTable("student", { name: "parag", id: 5 });
-await getData("student", {});
+// await insertRowInTable("teacher", { name: "parag", id: 6 });
+// await getData("student", {});
 await getData("teacher", {});
 
 async function updateRows(
