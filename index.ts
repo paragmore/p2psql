@@ -19,51 +19,65 @@ import Autobase from "autobase";
 
 export class SQLParser {
   query: string;
+  queryWords: string[];
   constructor(query: string) {
-    this.query = query;
+    this.query = query.toLowerCase();
+    this.queryWords = this.query.split(" ");
   }
 
-  parse() {
-    const queryWords = this.query.split(" ");
-    const queryType = queryWords[0].toLowerCase();
-    // Check the query type and call the appropriate function
-    switch (queryType) {
-      case "create":
-        this.create(queryWords);
-        break;
-      case "insert":
-        this.addRow(queryWords);
-        break;
-      // case "select":
-      //   getRows(query);
-      //   break;
-      // case "update":
-      //   updateRow(query);
-      //   break;
-      default:
-        console.log("Unsupported SQL query type.");
+  parseSQLQuery() {
+    const result: {
+      queryType?: string;
+      tableName?: string;
+      columns?: string[];
+      values?: string[];
+      whereClause?: string;
+    } = {};
+
+    // CREATE TABLE query
+    if (this.query.toUpperCase().startsWith("CREATE TABLE")) {
+      result.queryType = "CREATE_TABLE";
+      const regex = /CREATE TABLE (\w+)\s*\((.*)\);/i;
+      const match = this.query.match(regex);
+      if (match) {
+        result.tableName = match[1];
+        result.columns = match[2].split(",").map((column) => column.trim());
+      }
     }
-  }
-
-  private create(queryWords: string[]) {
-    switch (queryWords[1]) {
-      case "table":
-        this.createTable(queryWords);
-        break;
-      case "database":
-        this.createDatabase(queryWords);
-        break;
-      default:
-        console.log("Unsupported SQL query type.");
+    // INSERT query
+    else if (this.query.toUpperCase().startsWith("INSERT")) {
+      result.queryType = "INSERT";
+      const regex = /INSERT INTO (\w+)\s*\((.*)\)\s*VALUES\s*\((.*)\);/i;
+      const match = this.query.match(regex);
+      if (match) {
+        result.tableName = match[1];
+        result.columns = match[2].split(",").map((column) => column.trim());
+        result.values = match[3].split(",").map((value) => value.trim());
+      }
     }
+    // SELECT query
+    else if (this.query.toUpperCase().startsWith("SELECT")) {
+      result.queryType = "SELECT";
+      const regex = /SELECT (.*) FROM (\w+)(?: WHERE (.*))?;/i;
+      const match = this.query.match(regex);
+      if (match) {
+        result.columns = match[1].split(",").map((column) => column.trim());
+        result.tableName = match[2];
+        if (match[3]) {
+          result.whereClause = match[3];
+        }
+      }
+    }
+
+    return JSON.stringify(result);
   }
-
-  private createTable(queryWords: string[]) {}
-
-  private createDatabase(queryWords: string[]) {}
-
-  private addRow(queryWords: string[]) {}
 }
+
+const parseer = new SQLParser(
+  "CREATE TABLE Persons (PersonID int, LastName varchar(255), FirstName varchar(255), Address varchar(255), City varchar(255));"
+);
+
+console.log("PARSED", parseer.parseSQLQuery());
 export class Schema {
   definition: SchemaDefinition;
   lastIndex = 0;
@@ -262,7 +276,7 @@ class HyperSQL {
 
 const hyperSql = new HyperSQL();
 console.log("STARTING HYPERSQL");
-await hyperSql.start();
+// await hyperSql.start();
 console.log("STARTED HYPERSQL");
 
 // await hyperSql.createTable(
@@ -276,7 +290,7 @@ console.log("STARTED HYPERSQL");
 
 // await hyperSql.getall();
 
-await hyperSql.getData("student", {});
+// await hyperSql.getData("student", {});
 // await hyperSql.insertRowInTable("student", { name: "parag", id: 7 });
 
 export type SchemaDefinition = { [key: string]: SchemaValueType };
